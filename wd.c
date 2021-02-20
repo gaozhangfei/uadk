@@ -276,6 +276,7 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 		WD_ERR("Failed to open %s (%d).\n", char_dev_path, -errno);
 		goto free_dev;
 	}
+	fprintf(stderr, "%s ctx->fd=%d\n", __func__, ctx->fd);
 
 	return (handle_t)ctx;
 
@@ -297,6 +298,7 @@ void wd_release_ctx(handle_t h_ctx)
 	if (!ctx)
 		return;
 
+	fprintf(stderr, "%s ctx->fd=%d\n", __func__, ctx->fd);
 	close(ctx->fd);
 	free(ctx->dev);
 	free(ctx->drv_name);

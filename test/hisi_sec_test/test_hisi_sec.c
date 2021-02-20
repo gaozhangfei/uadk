@@ -1491,6 +1491,8 @@ static int sec_digest_sync_once(void)
 	unsigned long cnt = g_times;
 	int ret;
 	size_t unit_sz;
+	static int run_time = 0;
+	static int no_release = 0;
 
 	/* config setup */
 	ret = init_digest_ctx_config(CTX_TYPE_ENCRYPT, CTX_MODE_SYNC);
@@ -1555,6 +1557,22 @@ static int sec_digest_sync_once(void)
 	}
 	gettimeofday(&cur_tval, NULL);
 
+	if (run_time == 0) {
+		int pid;
+
+		run_time++;
+		pid = fork();
+		if (pid == 0) {
+			fprintf(stderr, "child pid=%d", getpid());
+
+			sec_digest_sync_once();
+			no_release = 1;
+
+		} else {
+			fprintf(stderr, "parent pid=%d\n", getpid());
+		}
+	}
+
 	time_used = (float)((cur_tval.tv_sec - start_tval.tv_sec) * 1000000 +
 		cur_tval.tv_usec - start_tval.tv_usec);
 	speed = g_times / time_used * 1000000;
@@ -1571,7 +1589,8 @@ out_sess:
 out_dst:
 	free_buf(g_data_fmt, req.in);
 out_src:
-	digest_uninit_config();
+	if (!no_release)
+		digest_uninit_config();
 
 	return ret;
 }
