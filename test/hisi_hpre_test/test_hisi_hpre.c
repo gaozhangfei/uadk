@@ -1970,12 +1970,18 @@ static int init_hpre_global_config(__u32 op_type)
 
 static void uninit_hpre_global_config(__u32 op_type)
 {
+	int i;
+
 	if (op_type > HPRE_ALG_INVLD_TYPE && op_type < MAX_RSA_ASYNC_TYPE)
 		wd_rsa_uninit();
 	else if (op_type > MAX_RSA_ASYNC_TYPE && op_type < MAX_DH_TYPE)
 		wd_dh_uninit();
 	else
 		wd_ecc_uninit();
+
+	for (i = 0; i < g_ctx_cfg.ctx_num; i++)
+		wd_release_ctx(g_ctx_cfg.ctxs[i].ctx);
+	free(g_ctx_cfg.ctxs);
 }
 
 static int init_opdata_param(struct wd_dh_req *req,
@@ -7697,7 +7703,6 @@ new_test_again:
 				if (req.dst)
 					free(req.dst);
 			}
-
 			if (sess)
 				wd_rsa_free_sess(sess);
 
@@ -7790,6 +7795,12 @@ static int hpre_sys_test(int thread_num, __u64 lcore_mask,
 	int i, ret, cnt = 0;
 	int h_cpuid;
 	float speed = 0.0;
+
+	ret = init_hpre_global_config(op_type);
+	if (ret) {
+		HPRE_TST_PRT("failed to init_hpre_global_config, ret %d!\n", ret);
+		return -1;
+	}
 
 	if (_get_one_bits(lcore_mask) > 0)
 		cnt =  _get_one_bits(lcore_mask);
@@ -9151,11 +9162,6 @@ int main(int argc, char *argv[])
 	else if (alg_op_type >= X448_GEN && alg_op_type <= X448_ASYNC_COMPUTE)
 		g_config.key_bits = 448;
 
-  	ret = init_hpre_global_config(alg_op_type);
-  	if (ret) {
-  		HPRE_TST_PRT("failed to init_hpre_global_config, ret %d!\n", ret);
-  		return -1;
-  	}
 
 	HPRE_TST_PRT(">> test start run %s :\n", g_config.op);
 	HPRE_TST_PRT(">> key_bits = %u\n", g_config.key_bits);
@@ -9207,7 +9213,27 @@ int main(int argc, char *argv[])
 	else
 		ret = -1; /* to extend other test samples */
 
-	uninit_hpre_global_config(alg_op_type);
+	static int run_time = 0;
+	static int no_release = 0;
+	if (run_time == 0) {
+		int pid;
+
+		run_time++;
+		pid = fork();
+		if (pid == 0) {
+			fprintf(stderr, "child pid=%d\n", getpid());
+
+			ret = hpre_sys_test(g_config.trd_num, g_config.core_mask[0],
+				g_config.core_mask[1], alg_op_type, g_config.dev_path, 0);
+			no_release = 1;
+
+		} else {
+			fprintf(stderr, "parent pid=%d\n", getpid());
+		}
+	}
+
+	if (!no_release)
+		uninit_hpre_global_config(alg_op_type);
 
 	return ret;
 

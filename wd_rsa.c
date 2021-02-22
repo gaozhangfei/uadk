@@ -108,10 +108,12 @@ void wd_rsa_set_driver(struct wd_rsa_driver *drv)
 static int param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 {
 	/* wd_rsa_init() could only be invoked once for one process. */
+	/*
 	if (wd_rsa_setting.config.ctx_num) {
 		WD_ERR("init rsa error: repeat initialize rsa\n");
 		return -WD_EINVAL;
 	}
+	*/
 
 	if (!config || !config->ctxs[0].ctx || !sched) {
 		WD_ERR("config or sched NULL\n");
