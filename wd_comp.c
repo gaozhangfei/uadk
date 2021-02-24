@@ -74,10 +74,12 @@ int wd_comp_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	int ret;
 
 	/* wd_comp_init() could only be invoked once for one process. */
+	/*
 	if (wd_comp_setting.config.ctx_num) {
 		WD_ERR("invalid, comp init() should only be invokoed once!\n");
 		return 0;
 	}
+	*/
 
 	if (!config || !sched) {
 		WD_ERR("invalid params, config or sched is NULL!\n");

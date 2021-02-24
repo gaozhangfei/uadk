@@ -313,6 +313,8 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 	size_t defl_size, infl_size;
 	struct hizip_test_info info = {0};
 	struct wd_sched *sched = NULL;
+	static int run_time = 0;
+	static int no_release = 0;
 
 	info.stats = stats;
 	info.opts = opts;
@@ -433,9 +435,27 @@ static int run_one_test(struct test_options *opts, struct hizip_stats *stats)
 		ret = hizip_verify_random_output(opts, &info);
 	}
 
+	if (run_time == 0) {
+		int pid;
+
+		run_time++;
+		pid = fork();
+		if (pid == 0) {
+			fprintf(stderr, "child pid=%d", getpid());
+
+			run_one_test(opts, stats);
+			no_release = 1;
+
+		} else {
+			fprintf(stderr, "parent pid=%d\n", getpid());
+		}
+	}
+
 	usleep(10);
-	if (!(opts->option & TEST_ZLIB))
-		uninit_config(&info, sched);
+	if (!no_release) {
+		if (!(opts->option & TEST_ZLIB))
+			uninit_config(&info, sched);
+	}
 	free(info.threads);
 out_with_defl_buf:
 	munmap(defl_buf, defl_size);
