@@ -63,12 +63,14 @@ static struct test_ops test_ops = {
 	.output = hizip_test_output,
 };
 
+static int child;
+struct wd_scheduler sched = {0};
+
 static int run_one_child(struct priv_options *opts)
 {
 	int i;
 	int ret = 0;
 	void *in_buf, *out_buf;
-	struct wd_scheduler sched = {0};
 	struct priv_context priv_ctx = {
 		.ctx = {0},
 		.opts = opts,
@@ -98,10 +100,12 @@ static int run_one_child(struct priv_options *opts)
 
 	hizip_prepare_random_input_data(ctx);
 
-	ret = hizip_test_init(&sched, copts, &test_ops, &priv_ctx);
-	if (ret) {
-		WD_ERR("hizip init fail with %d\n", ret);
-		goto out_with_out_buf;
+	if (child == 0) {
+		ret = hizip_test_init(&sched, copts, &test_ops, &priv_ctx);
+		if (ret) {
+			WD_ERR("hizip init fail with %d\n", ret);
+			goto out_with_out_buf;
+		}
 	}
 	if (sched.qs)
 		ctx->flags = sched.qs[0].dev_flags;
@@ -152,6 +156,11 @@ static int run_one_child(struct priv_options *opts)
 		out_buf = NULL;
 	}
 
+	if (child == 0) {
+		printf("parent no release\n");
+		return ret;
+	}
+
 	hizip_test_fini(&sched, copts);
 
 	if (out_buf)
@@ -181,6 +190,7 @@ static int run_one_test(struct priv_options *opts)
 	pids = calloc(opts->children, sizeof(pid_t));
 	if (!pids)
 		return -ENOMEM;
+	run_one_child(opts);
 
 	for (i = 0; i < opts->children; i++) {
 		pid = fork();
@@ -193,6 +203,7 @@ static int run_one_test(struct priv_options *opts)
 			pids[nr_children++] = pid;
 			continue;
 		}
+		child = 1;
 
 		/* Child */
 		exit(run_one_child(opts));
