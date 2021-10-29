@@ -12,6 +12,8 @@ struct hisi_qm_priv {
 	__u16 op_type;
 };
 
+int hisi_qm_read_mmap(struct wd_queue *q);
+int hisi_qm_write_mmap(struct wd_queue *q);
 int hisi_qm_set_queue_dio(struct wd_queue *q);
 int hisi_qm_set_queue_dio_noiommu(struct wd_queue *q);
 void hisi_qm_unset_queue_dio(struct wd_queue *q);

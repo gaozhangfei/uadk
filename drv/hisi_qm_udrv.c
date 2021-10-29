@@ -96,6 +96,32 @@ static int hisi_qm_recv_sqe(void *sqe,
 	return 0;
 }
 
+int hisi_qm_read_mmap(struct wd_queue *q)
+{
+	struct hisi_qm_queue_info *info = (struct hisi_qm_queue_info *)q->priv;
+
+
+	__u16 i = info->cq_head_index;
+	int ret;
+	struct cqe *cqe = info->cq_base + i * sizeof(struct cqe);
+	
+	printf("gzf %s\n", __func__);
+
+	printf("sqbase=%lld\n", info->sq_base);
+	printf("mmiobase=%x\n", info->mmio_base);
+	
+	printf("CQE_PHASE(cqe)=%d", CQE_PHASE(cqe));
+	return 0;
+}
+int hisi_qm_write_mmap(struct wd_queue *q)
+{
+	struct hisi_qm_queue_info *info = (struct hisi_qm_queue_info *)q->priv;
+	printf("gzf %s\n", __func__);
+	
+	info->db(info, DOORBELL_CMD_SQ, 1, 0);
+
+	return 0;
+}
 int hisi_qm_set_queue_dio(struct wd_queue *q)
 {
 	struct hisi_qm_queue_info *info;

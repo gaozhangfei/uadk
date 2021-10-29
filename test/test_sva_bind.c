@@ -17,7 +17,7 @@
 #include <unistd.h>
 
 #include "test_lib.h"
-
+#include "../drv/hisi_qm_udrv.h"
 struct priv_options {
 	struct test_options common;
 	int children;
@@ -25,6 +25,8 @@ struct priv_options {
 #define INJECT_SIG_BIND		(1UL << 0)
 #define INJECT_SIG_WORK		(1UL << 1)
 #define INJECT_TLB_FAULT	(1UL << 2)
+#define INJECT_SIG_READ		(1UL << 3)
+#define INJECT_SIG_WRITE	(1UL << 4)
 	unsigned long faults;
 };
 
@@ -78,6 +80,7 @@ static int run_one_child(struct priv_options *opts)
 	struct hizip_test_context save_ctx;
 	struct hizip_test_context *ctx = &priv_ctx.ctx;
 	struct test_options *copts = &opts->common;
+	printf("%s pid=%d\n", __func__, getpid());
 
 	ctx->opts = copts;
 	ctx->msgs = calloc(copts->req_cache_num, sizeof(*ctx->msgs));
@@ -109,6 +112,15 @@ static int run_one_child(struct priv_options *opts)
 	}
 	if (sched.qs)
 		ctx->flags = sched.qs[0].dev_flags;
+
+	if (opts->faults & INJECT_SIG_READ) {
+		if (child == 1)
+			return hisi_qm_read_mmap(&sched.qs[0]);
+	} 
+	if (opts->faults & INJECT_SIG_WRITE) {
+		if (child == 1)
+			return hisi_qm_write_mmap(&sched.qs[0]);
+	} 
 
 	if (opts->faults & INJECT_SIG_BIND)
 		kill(getpid(), SIGTERM);
@@ -259,6 +271,7 @@ static int run_test(struct priv_options *opts)
 static void handle_sigbus(int sig)
 {
 	    printf("SIGBUS!\n");
+	    printf("%s pid=%d\n", __func__, getpid());
 	        _exit(0);
 }
 
@@ -280,13 +293,25 @@ int main(int argc, char **argv)
 		},
 		.children		= 0,
 	};
+	printf("%s pid=%d\n", __func__, getpid());
 
 	while ((opt = getopt(argc, argv, COMMON_OPTSTRING "f:k:")) != -1) {
 		switch (opt) {
 		case 'f':
-			opts.children = strtol(optarg, NULL, 0);
-			if (opts.children < 0)
-				show_help = 1;
+			opts.children = 1; //strtol(optarg, NULL, 0);
+			//opts.children = strtol(optarg, NULL, 0);
+			//if (opts.children < 0)
+			//	show_help = 1;
+			switch (optarg[0]) {
+			case 'r':
+				opts.faults |= INJECT_SIG_READ;
+				break;
+			case 'w':
+				opts.faults |= INJECT_SIG_WRITE;
+				break;
+			default:
+				break;
+			}
 			break;
 		case 'k':
 			switch (optarg[0]) {
