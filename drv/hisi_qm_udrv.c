@@ -107,19 +107,29 @@ int hisi_qm_read_mmap(struct wd_queue *q)
 	
 	printf("gzf %s\n", __func__);
 
-	printf("sqbase=%lld\n", info->sq_base);
-	printf("mmiobase=%x\n", info->mmio_base);
+//	printf("sqbase=%lld\n", info->sq_base);
+//	printf("mmiobase=%x\n", info->mmio_base);
+	//printf("mmiobase=%x\n", *((__u32 *)info->mmio_base));
+	printf("mmiobase=%x\n", *((__u32 *)info->sq_base));
 	
-	printf("CQE_PHASE(cqe)=%d", CQE_PHASE(cqe));
+//	printf("CQE_PHASE(cqe)=%d", CQE_PHASE(cqe));
 	return 0;
 }
 int hisi_qm_write_mmap(struct wd_queue *q)
 {
 	struct hisi_qm_queue_info *info = (struct hisi_qm_queue_info *)q->priv;
+	int i;
 	printf("gzf %s\n", __func__);
 	
-	info->db(info, DOORBELL_CMD_SQ, 1, 0);
+//	info->db(info, DOORBELL_CMD_SQ, 1, 0);
+//	for (i = 0; i < 1; i++)
+//		hisi_qm_fill_sqe(0, q->priv, i);
+//		memcpy(info->sq_base + i * info->sqe_size, 0, info->sqe_size);
 
+*((__u32 *)info->mmio_base) = 1;
+*((__u32 *)info->mmio_base+1) = 1;
+*((__u32 *)info->sq_base) = 1;
+*((__u32 *)info->sq_base+1) = 1;
 	return 0;
 }
 int hisi_qm_set_queue_dio(struct wd_queue *q)
