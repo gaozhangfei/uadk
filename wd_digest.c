@@ -6,6 +6,7 @@
 
 #include <stdlib.h>
 #include <pthread.h>
+#include "adapter.h"
 #include "include/drv/wd_digest_drv.h"
 #include "wd_digest.h"
 
@@ -50,7 +51,6 @@ struct wd_digest_setting {
 	struct wd_sched	sched;
 	struct wd_alg_driver	*driver;
 	struct wd_async_msg_pool pool;
-	void *dlhandle;
 	void *dlh_list;
 } wd_digest_setting;
 
@@ -74,19 +74,11 @@ struct wd_digest_sess {
 struct wd_env_config wd_digest_env_config;
 static struct wd_init_attrs wd_digest_init_attrs;
 
-static void wd_digest_close_driver(void)
-{
-	if (wd_digest_setting.dlhandle) {
-		wd_release_drv(wd_digest_setting.driver);
-		dlclose(wd_digest_setting.dlhandle);
-		wd_digest_setting.dlhandle = NULL;
-	}
-}
-
 static int wd_digest_open_driver(void)
 {
-	struct wd_alg_driver *driver = NULL;
-	const char *alg_name = "sm3";
+	struct wd_alg_driver *adapter = NULL;
+	char *drv_name = "hisi_sec2";
+	char *alg_name = "sm3";
 	char lib_path[PATH_STR_SIZE];
 	int ret;
 
@@ -101,20 +93,18 @@ static int wd_digest_open_driver(void)
 	if (ret)
 		return ret;
 
-	wd_digest_setting.dlhandle = dlopen(lib_path, RTLD_NOW);
-	if (!wd_digest_setting.dlhandle) {
-		WD_ERR("failed to open libhisi_sec.so, %s\n", dlerror());
+	adapter = uadk_adapter_alloc();
+	if (!adapter)
+		return -WD_EINVAL;
+
+	ret = uadk_adapter_parse(adapter, lib_path, drv_name, alg_name);
+	if (ret) {
+		uadk_adapter_free(adapter);
+		WD_ERR("failed to parse adapter\n");
 		return -WD_EINVAL;
 	}
 
-	driver = wd_request_drv(alg_name, false);
-	if (!driver) {
-		wd_digest_close_driver();
-		WD_ERR("failed to get %s driver support\n", alg_name);
-		return -WD_EINVAL;
-	}
-
-	wd_digest_setting.driver = driver;
+	wd_digest_setting.driver = adapter;
 
 	return 0;
 }
@@ -299,7 +289,8 @@ int wd_digest_init(struct wd_ctx_config *config, struct wd_sched *sched)
 	return 0;
 
 out_close_driver:
-	wd_digest_close_driver();
+	wd_alg_driver_exit(wd_digest_setting.driver);
+	uadk_adapter_free(wd_digest_setting.driver);
 out_clear_init:
 	wd_alg_clear_init(&wd_digest_setting.status);
 	return ret;
@@ -311,12 +302,12 @@ static void wd_digest_uninit_nolock(void)
 	wd_clear_sched(&wd_digest_setting.sched);
 	wd_alg_uninit_driver(&wd_digest_setting.config,
 			     wd_digest_setting.driver);
+	uadk_adapter_free(wd_digest_setting.driver);
 }
 
 void wd_digest_uninit(void)
 {
 	wd_digest_uninit_nolock();
-	wd_digest_close_driver();
 	wd_alg_clear_init(&wd_digest_setting.status);
 }
 
