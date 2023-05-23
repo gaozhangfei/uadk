@@ -52,6 +52,7 @@ struct wd_digest_setting {
 	struct wd_alg_driver	*driver;
 	struct wd_async_msg_pool pool;
 	void *dlh_list;
+	enum alg_task_type task_type;
 } wd_digest_setting;
 
 struct wd_digest_sess {
@@ -326,7 +327,8 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 {
 	struct wd_ctx_nums digest_ctx_num[1] = {0};
 	struct wd_ctx_params digest_ctx_params = {0};
-	int ret = 0;
+	struct wd_alg_driver *adapter, *drv;
+	int ret = 0, idx = 0;
 	bool flag;
 
 	pthread_atfork(NULL, NULL, wd_digest_clear_status);
@@ -361,42 +363,87 @@ int wd_digest_init2_(char *alg, __u32 sched_type, int task_type,
 res_retry:
 	memset(&wd_digest_setting.config, 0, sizeof(struct wd_ctx_config_internal));
 
-	/* Get alg driver and dev name */
-	wd_digest_setting.driver = wd_alg_drv_bind(task_type, alg);
-	if (!wd_digest_setting.driver) {
-		WD_ERR("fail to bind a valid driver.\n");
-		ret = -WD_EINVAL;
-		goto out_dlopen;
-	}
+	if (task_type == TASK_MIX) {
+		adapter = uadk_adapter_alloc();
+		if (!adapter)
+			return -WD_EINVAL;
 
-	ret = wd_ctx_param_init(&digest_ctx_params, ctx_params,
+		do {
+			drv = wd_find_drv(NULL, alg, idx);
+			if (!drv)
+				break;
+
+			idx++;
+			uadk_adapter_attach_worker(adapter, drv, NULL);
+
+			if (drv->priority == UADK_ALG_HW) {
+				ret = wd_ctx_param_init(&digest_ctx_params, ctx_params,
+						digest_ctx_num, drv, 1);
+				if (ret) {
+					WD_ERR("fail to init ctx param\n");
+					break;
+				}
+				wd_digest_init_attrs.alg = alg;
+				wd_digest_init_attrs.sched_type = sched_type;
+				wd_digest_init_attrs.driver = drv;
+				wd_digest_init_attrs.ctx_params = &digest_ctx_params;
+				wd_digest_init_attrs.alg_init = wd_digest_init_nolock;
+				wd_digest_init_attrs.alg_poll_ctx = wd_digest_poll_ctx;
+				ret = wd_alg_attrs_init(&wd_digest_init_attrs);
+				if (ret) {
+					WD_ERR("fail to init alg attrs.\n");
+					break;
+				}
+			}
+
+		} while (drv);
+
+		if (idx == 0 || ret) {
+			/* not find alg or err */
+			uadk_adapter_free(adapter);
+		} else {
+			/* hw already inited with conf, others init with NULL */
+			wd_alg_driver_init(adapter, NULL);
+			wd_digest_setting.driver = adapter;
+		}
+	} else {
+		/* Get alg driver and dev name */
+		wd_digest_setting.driver = wd_alg_drv_bind(task_type, alg);
+		if (!wd_digest_setting.driver) {
+			WD_ERR("fail to bind a valid driver.\n");
+			ret = -WD_EINVAL;
+			goto out_dlopen;
+		}
+
+		ret = wd_ctx_param_init(&digest_ctx_params, ctx_params,
 				digest_ctx_num, wd_digest_setting.driver, 1);
-	if (ret) {
-		if (ret == -WD_EAGAIN) {
-			wd_disable_drv(wd_digest_setting.driver);
-			wd_alg_drv_unbind(wd_digest_setting.driver);
-			goto res_retry;
+		if (ret) {
+			if (ret == -WD_EAGAIN) {
+				wd_disable_drv(wd_digest_setting.driver);
+				wd_alg_drv_unbind(wd_digest_setting.driver);
+				goto res_retry;
+			}
+			goto out_driver;
 		}
-		goto out_driver;
-	}
 
-	wd_digest_init_attrs.alg = alg;
-	wd_digest_init_attrs.sched_type = sched_type;
-	wd_digest_init_attrs.driver = wd_digest_setting.driver;
-	wd_digest_init_attrs.ctx_params = &digest_ctx_params;
-	wd_digest_init_attrs.alg_init = wd_digest_init_nolock;
-	wd_digest_init_attrs.alg_poll_ctx = wd_digest_poll_ctx;
-	ret = wd_alg_attrs_init(&wd_digest_init_attrs);
-	if (ret) {
-		if (ret == -WD_ENODEV) {
-			wd_disable_drv(wd_digest_setting.driver);
-			wd_alg_drv_unbind(wd_digest_setting.driver);
-			goto res_retry;
+		wd_digest_init_attrs.alg = alg;
+		wd_digest_init_attrs.sched_type = sched_type;
+		wd_digest_init_attrs.driver = wd_digest_setting.driver;
+		wd_digest_init_attrs.ctx_params = &digest_ctx_params;
+		wd_digest_init_attrs.alg_init = wd_digest_init_nolock;
+		wd_digest_init_attrs.alg_poll_ctx = wd_digest_poll_ctx;
+		ret = wd_alg_attrs_init(&wd_digest_init_attrs);
+		if (ret) {
+			if (ret == -WD_ENODEV) {
+				wd_disable_drv(wd_digest_setting.driver);
+				wd_alg_drv_unbind(wd_digest_setting.driver);
+				goto res_retry;
+			}
+			WD_ERR("fail to init alg attrs.\n");
+			goto out_driver;
 		}
-		WD_ERR("fail to init alg attrs.\n");
-		goto out_driver;
 	}
-
+	wd_digest_setting.task_type = task_type;
 	wd_alg_set_init(&wd_digest_setting.status);
 
 	return 0;
@@ -414,7 +461,12 @@ void wd_digest_uninit2(void)
 {
 	wd_digest_uninit_nolock();
 	wd_alg_attrs_uninit(&wd_digest_init_attrs);
-	wd_alg_drv_unbind(wd_digest_setting.driver);
+	if (wd_digest_setting.task_type == TASK_MIX) {
+		wd_alg_driver_exit(wd_digest_setting.driver);
+		uadk_adapter_free(wd_digest_setting.driver);
+	} else {
+		wd_alg_drv_unbind(wd_digest_setting.driver);
+	}
 	wd_dlclose_drv(wd_digest_setting.dlh_list);
 	wd_digest_setting.dlh_list = NULL;
 	wd_alg_clear_init(&wd_digest_setting.status);

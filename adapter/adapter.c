@@ -16,11 +16,18 @@ int uadk_adapter_attach_worker(struct wd_alg_driver *adapter,
 {
 	struct uadk_adapter_ctx *ctx = (struct uadk_adapter_ctx *)adapter->priv;
 	struct uadk_adapter_worker *worker;
-	int idx = ctx->workers_nb;
+	int idx = ctx->workers_nb, i;
 
 	if (idx >= UADK_MAX_NB_WORKERS) {
 		fprintf(stderr, "%s too many workers\n", __func__);
 		return -EINVAL;
+	}
+
+	for (i = 0; i < idx; i++) {
+		if (strcmp(drv->drv_name, ctx->workers[i].driver->drv_name) == 0) {
+			fprintf(stderr, "%s attach same driver\n", __func__);
+			return -EINVAL;
+		}
 	}
 
 	worker = &ctx->workers[idx];
@@ -47,7 +54,7 @@ int uadk_adapter_parse(struct wd_alg_driver *adapter, char *lib_path,
 		}
 	}
 
-	drv = wd_find_drv(drv_name, alg_name);
+	drv = wd_find_drv(drv_name, alg_name, 0);
 	if (!drv) {
 		fprintf(stderr, "%s failed to find driver\n", __func__);
 		ret = -EINVAL;

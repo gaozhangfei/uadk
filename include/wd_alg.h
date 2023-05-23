@@ -99,7 +99,6 @@ struct wd_alg_list {
 
 struct wd_alg_driver *wd_request_drv(const char	*alg_name, bool hw_mask);
 void wd_release_drv(struct wd_alg_driver *drv);
-struct wd_alg_driver *wd_find_drv(char *drv_name, char *alg_name);
 
 bool wd_drv_alg_support(const char *alg_name,
 	struct wd_alg_driver *drv);
@@ -107,7 +106,7 @@ void wd_enable_drv(struct wd_alg_driver *drv);
 void wd_disable_drv(struct wd_alg_driver *drv);
 
 struct wd_alg_list *wd_get_alg_head(void);
-
+struct wd_alg_driver *wd_find_drv(char *drv_name, char *alg_name, int idx);
 #ifdef __cplusplus
 }
 #endif

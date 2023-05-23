@@ -12,11 +12,6 @@
 #endif
 
 struct uadk_adapter_ops {
-	// worker_attach;
-	// worker_detach;
-
-	// scheduler_start;
-	// scheduler_stop;
 	int (*init)(struct wd_alg_driver *drv);
 	void (*exit)(struct wd_alg_driver *drv);
 	int (*send)(struct wd_alg_driver *drv, handle_t handle, void *drv_msg);

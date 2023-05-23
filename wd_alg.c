@@ -263,7 +263,7 @@ void wd_release_drv(struct wd_alg_driver *drv)
 	pthread_mutex_unlock(&mutex);
 }
 
-struct wd_alg_driver *wd_find_drv(char *drv_name, char *alg_name)
+struct wd_alg_driver *wd_find_drv(char *drv_name, char *alg_name, int idx)
 {
 	struct wd_alg_list *head = &alg_list_head;
 	struct wd_alg_list *pnext = head->next;
@@ -275,13 +275,26 @@ struct wd_alg_driver *wd_find_drv(char *drv_name, char *alg_name)
 	}
 
 	pthread_mutex_lock(&mutex);
-	while (pnext) {
-		if (!strcmp(alg_name, pnext->alg_name) &&
-		    !strcmp(drv_name, pnext->drv_name)) {
-			drv = pnext->drv;
-			break;
+
+	if (drv_name) {
+		while (pnext) {
+			if (!strcmp(alg_name, pnext->alg_name) &&
+			    !strcmp(drv_name, pnext->drv_name)) {
+				drv = pnext->drv;
+				break;
+			}
+			pnext = pnext->next;
 		}
-		pnext = pnext->next;
+	} else {
+		int i = 0;
+		while (pnext) {
+			if (!strcmp(alg_name, pnext->alg_name)) {
+				drv = pnext->drv;
+				if (i++ == idx)
+					break;
+			}
+			pnext = pnext->next;
+		}
 	}
 
 	pthread_mutex_unlock(&mutex);

@@ -10,11 +10,8 @@
 #include "wd_alg.h"
 
 enum uadk_adapter_mode {
-	UADK_ADAPT_MODE_NONE,			// no mode
-	UADK_ADAPT_MODE_ROUNDROBIN,		// roundrobin
-	UADK_ADAPT_MODE_THRESHOLD,		// > threshold, accelerator,
-						// < threshold, cpu
-	UADK_ADAPT_MODE_FAILOVER,		// fail to enqueue (full or fail), switch to backup
+	UADK_ADAPT_MODE_NONE,
+	UADK_ADAPT_MODE_ROUNDROBIN,
 };
 
 struct wd_alg_driver *uadk_adapter_alloc(void);
