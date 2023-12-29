@@ -224,12 +224,6 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 	}
 
 	for (i = 0; i < cfg->ctx_num; i++) {
-		if (!cfg->ctxs[i].ctx) {
-			WD_ERR("invalid: ctx is NULL!\n");
-			ret = -WD_EINVAL;
-			goto err_out;
-		}
-
 		clone_ctx_to_internal(cfg->ctxs + i, ctxs + i);
 		ret = pthread_spin_init(&ctxs[i].lock, PTHREAD_PROCESS_SHARED);
 		if (ret) {
@@ -1153,8 +1147,10 @@ static int wd_get_wd_ctx(struct wd_env_config_per_numa *config,
 	return 0;
 
 free_ctx:
-	for (j = start; j < i; j++)
-		wd_release_ctx(ctx_config->ctxs[j].ctx);
+	for (j = start; j < i; j++) {
+		if (ctx_config->ctxs[j].ctx)
+			wd_release_ctx(ctx_config->ctxs[j].ctx);
+	}
 	return ret;
 }
 
@@ -1162,8 +1158,10 @@ static void wd_put_wd_ctx(struct wd_ctx_config *ctx_config, __u32 ctx_num)
 {
 	__u32 i;
 
-	for (i = 0; i < ctx_num; i++)
-		wd_release_ctx(ctx_config->ctxs[i].ctx);
+	for (i = 0; i < ctx_num; i++) {
+		if (ctx_config->ctxs[i].ctx)
+			wd_release_ctx(ctx_config->ctxs[i].ctx);
+	}
 }
 
 static int wd_alloc_ctx(struct wd_env_config *config)
@@ -2147,7 +2145,14 @@ int wd_ctx_param_init(struct wd_ctx_params *ctx_params,
 		numa_free_nodemask(ctx_params->bmp);
 		return -WD_EAGAIN;
 	}
-
+	if (ctx_params->op_type_num == 0) {
+		/* set default */
+		ctx_params->op_type_num = 1;
+		if (ctx_params->ctx_set_num) {
+			ctx_params->ctx_set_num[0].sync_ctx_num = 1;
+			ctx_params->ctx_set_num[0].async_ctx_num = 1;
+		}
+	}
 	return 0;
 }
 
@@ -2452,12 +2457,6 @@ static int wd_init_ctx_set(struct wd_init_attrs *attrs, struct uacce_dev_list *l
 			/* self-decrease i to eliminate self-increase on next loop */
 			i--;
 			continue;
-		} else if (!ctx_config->ctxs[i].ctx) {
-			/*
-			 * wd_release_ctx_set will release ctx in
-			 * caller wd_init_ctx_and_sched.
-			 */
-			return -WD_ENOMEM;
 		}
 		ctx_config->ctxs[i].op_type = op_type;
 		ctx_config->ctxs[i].ctx_mode =
