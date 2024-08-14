@@ -44,6 +44,7 @@ struct wd_digest_setting {
 	struct wd_async_msg_pool pool;
 	void *dlhandle;
 	void *dlh_list;
+	struct uadk_adapter *adapter;
 } wd_digest_setting;
 
 struct wd_digest_stream_data {
@@ -68,7 +69,25 @@ struct wd_digest_sess {
 	__u32			key_bytes;
 	void			*sched_key;
 	struct wd_digest_stream_data stream_data;
+	struct uadk_adapter_worker *worker;
+	pthread_spinlock_t worker_lock;
 };
+
+int wd_digest_switch_worker(struct wd_digest_sess *sess, int para)
+{
+	struct uadk_adapter_worker *worker;
+	int ret = -WD_EINVAL;
+
+	pthread_spin_lock(&sess->lock);
+	worker = uadk_adapter_switch_worker(sess->adapter, para);
+	if (worker) {
+		ret = WD_SUCCESS;
+		sess->worker = worker;
+	}
+	pthread_spin_unlock(&sess->lock);
+
+	return ret;
+}
 
 struct wd_env_config wd_digest_env_config;
 static struct wd_init_attrs wd_digest_init_attrs;
@@ -672,12 +691,16 @@ int wd_do_digest_sync(handle_t h_sess, struct wd_digest_req *req)
 
 int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 {
-	struct wd_ctx_config_internal *config = &wd_digest_setting.config;
 	struct wd_digest_sess *dsess = (struct wd_digest_sess *)h_sess;
+	struct uadk_adapter_worker *worker;
 	struct wd_ctx_internal *ctx;
 	struct wd_digest_msg *msg;
 	int msg_id, ret;
 	__u32 idx;
+
+	pthread_spin_lock(&dsess->lock);
+	worker = dsess->worker;
+	pthread_spin_unlock(&dsess->lock);
 
 	ret = wd_digest_param_check(dsess, req);
 	if (unlikely(ret))
@@ -688,14 +711,14 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		return -WD_EINVAL;
 	}
 
-	idx = wd_digest_setting.sched.pick_next_ctx(
-		wd_digest_setting.sched.h_sched_ctx,
+	idx = worker->sched.pick_next_ctx(
+		worker->sched.h_sched_ctx,
 		dsess->sched_key, CTX_MODE_ASYNC);
-	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
+	ret = wd_check_ctx(worker->config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;
 
-	ctx = config->ctxs + idx;
+	ctx = worker->config.ctxs + idx;
 
 	msg_id = wd_get_msg_from_pool(&wd_digest_setting.pool, idx,
 				   (void **)&msg);
@@ -707,7 +730,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 	fill_request_msg(msg, req, dsess);
 	msg->tag = msg_id;
 
-	ret = wd_alg_driver_send(wd_digest_setting.driver, ctx->ctx, msg);
+	ret = wd_alg_driver_send(worker->driver, ctx->ctx, msg);
 	if (unlikely(ret < 0)) {
 		if (ret != -WD_EBUSY)
 			WD_ERR("failed to send BD, hw is err!\n");
@@ -715,7 +738,7 @@ int wd_do_digest_async(handle_t h_sess, struct wd_digest_req *req)
 		goto fail_with_msg;
 	}
 
-	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
+	wd_dfx_msg_cnt(worker->config, WD_CTX_CNT_NUM, idx);
 	ret = wd_add_task_to_async_queue(&wd_digest_env_config, idx);
 	if (ret)
 		goto fail_with_msg;
