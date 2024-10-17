@@ -250,11 +250,47 @@ int wd_cipher_set_key(handle_t h_sess, const __u8 *key, __u32 key_len)
 	return 0;
 }
 
+struct hisi_qm_queue_info {
+	void *sq_base;
+	void *cq_base;
+	int sqe_size;
+	void *mmio_base;
+	void *db_base;
+	int (*db)(struct hisi_qm_queue_info *q, __u8 cmd,
+		  __u16 index, __u8 priority);
+	void *ds_tx_base;
+	void *ds_rx_base;
+	__u8 qp_mode;
+	__u16 sq_tail_index;
+	__u16 cq_head_index;
+	__u16 sq_depth;
+	__u16 cq_depth;
+	__u16 sqn;
+	__u16 qc_type;
+	__u16 used_num;
+	__u16 hw_type;
+	__u32 idx;
+	bool cqc_phase;
+	pthread_spinlock_t sd_lock;
+	pthread_spinlock_t rv_lock;
+	unsigned long region_size[UACCE_QFRT_MAX];
+	bool epoll_en;
+};
+
+struct hisi_qp {
+	struct hisi_qm_queue_info q_info;
+	handle_t h_sgl_pool;
+	handle_t h_ctx;
+	/* Private area for driver use, point to queue specifial data */
+	void *priv;
+};
+
 handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 {
 	struct wd_cipher_sess *sess = NULL;
 	bool ret;
 
+	printf("gzf %s\n", __func__);
 	if (unlikely(!setup)) {
 		WD_ERR("invalid: cipher input setup is NULL!\n");
 		return (handle_t)0;
@@ -289,7 +325,19 @@ handle_t wd_cipher_alloc_sess(struct wd_cipher_sess_setup *setup)
 		WD_ERR("failed to init session schedule key!\n");
 		goto err_sess;
 	}
+//*
+	static int test;
+	if (test++ == 0) {
+		printf("gzf %s wll test only once \n", __func__);
+		
+		struct wd_ctx_config_internal *config = &wd_cipher_setting.config;
+		handle_t h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[1].ctx);
+		struct hisi_qp *qp = (struct hisi_qp *)h_qp; 
 
+		wd_release_ctx_force(qp->h_ctx);
+		return 0;
+	}
+//*/
 	return (handle_t)sess;
 
 err_sess:
@@ -732,6 +780,7 @@ int wd_do_cipher_async(handle_t h_sess, struct wd_cipher_req *req)
 	idx = wd_cipher_setting.sched.pick_next_ctx(
 		     wd_cipher_setting.sched.h_sched_ctx,
 		     sess->sched_key, CTX_MODE_ASYNC);
+	idx = 0;
 	ret = wd_check_ctx(config, CTX_MODE_ASYNC, idx);
 	if (ret)
 		return ret;

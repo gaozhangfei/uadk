@@ -429,6 +429,7 @@ handle_t wd_request_ctx(struct uacce_dev *dev)
 	memcpy(ctx->dev_path, dev->char_dev_path, MAX_DEV_NAME_LEN);
 	ctx->dev_path[MAX_DEV_NAME_LEN - 1] = '\0';
 
+	printf("gzf %s ctx=%p\n", __func__, ctx);
 	return (handle_t)ctx;
 
 free_drv_name:
@@ -448,6 +449,10 @@ void wd_release_ctx(handle_t h_ctx)
 
 	if (!ctx)
 		return;
+
+
+	printf("gzf %s ctx=%p\n", __func__, ctx);
+	getchar();
 
 	close(ctx->fd);
 	free(ctx->dev);
@@ -480,6 +485,8 @@ int wd_release_ctx_force(handle_t h_ctx)
 	if (!ctx)
 		return -WD_EINVAL;
 
+	printf("gzf %s\n", __func__);
+	//getchar();
 	ret = wd_ctx_set_io_cmd(h_ctx, UACCE_CMD_PUT_Q, NULL);
 	if (ret)
 		WD_ERR("failed to stop on %s (%d), ret = %d!\n",

@@ -1219,6 +1219,7 @@ static void *sec_uadk_cipher_async(void *arg)
 	u32 count = 0;
 	int ret, i;
 
+printf("gzf %s\n", __func__);
 	if (pdata->td_id > g_thread_num)
 		return NULL;
 
@@ -1390,7 +1391,7 @@ static void *sec_uadk_digest_async(void *arg)
 	handle_t h_sess;
 	u32 count = 0;
 	int ret, i;
-
+printf("gzf %s\n", __func__);
 	if (pdata->td_id > g_thread_num)
 		return NULL;
 

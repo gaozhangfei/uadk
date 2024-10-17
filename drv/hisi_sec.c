@@ -3061,6 +3061,7 @@ static int hisi_sec_init(struct wd_alg_driver *drv, void *conf)
 	handle_t h_ctx;
 	__u32 i, j;
 
+	printf("gzf %s config->ctx_num=%d\n", __func__, config->ctx_num);
 	if (!config->ctx_num) {
 		WD_ERR("invalid: sec init config ctx num is 0!\n");
 		return -WD_EINVAL;
@@ -3113,6 +3114,7 @@ static void hisi_sec_exit(struct wd_alg_driver *drv)
 	}
 
 	config = &priv->config;
+	printf("gzf %s config->ctx_num=%d\n", __func__, config->ctx_num);
 	for (i = 0; i < config->ctx_num; i++) {
 		h_qp = (handle_t)wd_ctx_get_priv(config->ctxs[i].ctx);
 		hisi_qm_free_qp(h_qp);
