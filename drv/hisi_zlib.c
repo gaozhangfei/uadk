@@ -132,6 +132,7 @@ static int hisi_zlib_recv(struct wd_alg_driver *drv, handle_t ctx, void *msg)
 	.drv_name = "hisi_zlib",\
 	.alg_name = zlib_alg_name,\
 	.calc_type = UADK_ALG_SOFT,\
+	.mode = UADK_DRV_SYNCONLY,\
 	.priority = 0,\
 	.init = hisi_zlib_init,\
 	.exit = hisi_zlib_exit,\
