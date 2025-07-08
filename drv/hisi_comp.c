@@ -442,7 +442,15 @@ static int fill_buf_deflate_generic(struct hisi_zip_sqe *sqe,
 	if (msg->ctx_buf)
 		ctx_buf = msg->ctx_buf + RSV_OFFSET;
 
-	fill_buf_addr_deflate(sqe, src, dst, ctx_buf);
+	if (!msg->blkpool) {
+		fill_buf_addr_deflate(sqe, src, dst, ctx_buf);
+	} else if (msg->blkpool_flag == WD_BLKPOOL_FLAT_MEMCPY ||
+		   msg->blkpool_flag == WD_BLKPOOL_FLAT_USER) {
+		fill_buf_addr_deflate(sqe,
+			wd_blkpool_phys(msg->blkpool, src, in_size),
+			wd_blkpool_phys(msg->blkpool, dst, msg->avail_out),
+			wd_blkpool_phys(msg->blkpool, ctx_buf, 0));
+	}
 
 	return 0;
 }

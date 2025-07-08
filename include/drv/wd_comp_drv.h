@@ -53,6 +53,10 @@ struct wd_comp_msg {
 	__u32 checksum;
 	/* Request identifier */
 	__u32 tag;
+	enum wd_blkpool_flag blkpool_flag;
+	void *blkpool;
+	void *src;
+	void *dst;
 };
 
 struct wd_comp_msg *wd_comp_get_msg(__u32 idx, __u32 tag);

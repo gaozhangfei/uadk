@@ -10,6 +10,7 @@
 #include <numa.h>
 
 #include "wd_alg_common.h"
+#include "wd_bmm.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -149,6 +150,7 @@ struct wd_comp_sess_setup {
 	enum wd_comp_winsz_type win_sz; /* Denoted by enum wd_comp_winsz_type */
 	enum wd_comp_op_type op_type;   /* Denoted by enum wd_comp_op_type */
 	void *sched_param;
+	void *blkpool;
 };
 
 /**
@@ -256,6 +258,7 @@ void wd_comp_ctx_num_uninit(void);
 int wd_comp_get_env_param(__u32 node, __u32 type, __u32 mode,
 			  __u32 *num, __u8 *is_enable);
 
+void *wd_comp_get_blkpool(void);
 #ifdef __cplusplus
 }
 #endif

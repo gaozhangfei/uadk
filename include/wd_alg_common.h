@@ -142,6 +142,7 @@ struct wd_ctx_internal {
 	__u8 ctx_mode;
 	__u16 sqn;
 	pthread_spinlock_t lock;
+	void *blkpool;
 };
 
 struct wd_ctx_config_internal {

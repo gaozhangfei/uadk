@@ -8,6 +8,8 @@
 #include "include/wd_sched.h"
 #include "include/fse.h"
 
+#define HW_CTX_SIZE                     (64 * 1024)
+
 #define ZIP_TST_PRT			printf
 #define PATH_SIZE			64
 #define ZIP_FILE			"./zip"
@@ -22,6 +24,8 @@ struct uadk_bd {
 	u8 *dst;
 	u32 src_len;
 	u32 dst_len;
+	void *pool_src;
+	void *pool_dst;
 };
 
 struct bd_pool {
@@ -31,6 +35,8 @@ struct bd_pool {
 struct thread_pool {
 	struct bd_pool *pool;
 } g_zip_pool;
+
+void *g_blkpool;
 
 enum ZIP_OP_MODE {
 	BLOCK_MODE,
@@ -145,7 +151,11 @@ static int save_file_data(const char *alg, u32 pkg_len, u32 optype)
 
 	// write data for one buffer one buffer to file line.
 	for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
-		size = write(fd, g_zip_pool.pool[0].bds[j].dst,
+		if (g_blkpool)
+			size = write(fd, g_zip_pool.pool[0].bds[j].pool_dst,
+				fhead->blk_sz[j]);
+		else
+			size = write(fd, g_zip_pool.pool[0].bds[j].dst,
 				fhead->blk_sz[j]);
 		if (size < 0) {
 			ZIP_TST_PRT("compress write data error size: %lu!\n", size);
@@ -297,6 +307,27 @@ static void uninit_ctx_config2(void)
 	wd_comp_uninit2();
 }
 
+static int init_blkpool(struct acc_option *options)
+{
+	int ret = 0;
+
+	g_blkpool = wd_comp_get_blkpool();
+
+	if (g_blkpool) {
+		struct wd_blkpool_setup setup;
+
+		memset(&setup, 0, sizeof(setup));
+		setup.block_size = HW_CTX_SIZE;
+		setup.block_num = DEFAULT_BLOCK_NM;
+		setup.align_size = DEFAULT_ALIGN_SIZE;
+		ret = wd_blkpool_setup(g_blkpool, &setup);
+		if (ret)
+			ZIP_TST_PRT("failed to setup blkpool!\n");
+	}
+
+	return ret;
+}
+
 static int init_ctx_config2(struct acc_option *options)
 {
 	struct wd_ctx_params cparams = {0};
@@ -333,6 +364,10 @@ static int init_ctx_config2(struct acc_option *options)
 		ZIP_TST_PRT("failed to do comp init2!\n");
 
 	free(ctx_set_num);
+
+	if (options->user)
+		init_blkpool(options);
+
 	return ret;
 }
 
@@ -506,6 +541,8 @@ static int init_ctx_config(struct acc_option *options)
 		goto free_sched;
 	}
 
+	if (options->user)
+		init_blkpool(options);
 	return 0;
 
 free_sched:
@@ -614,6 +651,13 @@ static void free_uadk_bd_pool(void)
 			for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
 				free(g_zip_pool.pool[i].bds[j].src);
 				free(g_zip_pool.pool[i].bds[j].dst);
+
+				if (g_blkpool) {
+					wd_blkpool_free(g_blkpool,
+						g_zip_pool.pool[i].bds[j].pool_src);
+					wd_blkpool_free(g_blkpool,
+						g_zip_pool.pool[i].bds[j].pool_dst);
+				}
 			}
 		}
 		free(g_zip_pool.pool[i].bds);
@@ -994,6 +1038,8 @@ static void *zip_uadk_blk_sync_run(void *arg)
 	comp_setup.win_sz = pdata->win_sz;
 	comp_setup.comp_lv = pdata->comp_lv;
 	comp_setup.sched_param = &param;
+	if (g_blkpool)
+		comp_setup.blkpool = g_blkpool;
 	h_sess = wd_comp_alloc_sess(&comp_setup);
 	if (!h_sess)
 		return NULL;
@@ -1009,8 +1055,13 @@ static void *zip_uadk_blk_sync_run(void *arg)
 
 	while(1) {
 		i = count % MAX_POOL_LENTH_COMP;
-		creq.src = uadk_pool->bds[i].src;
-		creq.dst = uadk_pool->bds[i].dst;
+		if (g_blkpool) {
+			creq.src = uadk_pool->bds[i].pool_src;
+			creq.dst = uadk_pool->bds[i].pool_dst;
+		} else {
+			creq.src = uadk_pool->bds[i].src;
+			creq.dst = uadk_pool->bds[i].dst;
+		}
 		creq.src_len = uadk_pool->bds[i].src_len;
 		creq.dst_len = out_len;
 
@@ -1344,6 +1395,35 @@ async_error:
 	return ret;
 }
 
+static int load_blkpool_data(void)
+{
+	int i, j;
+	int src_len, dst_len;
+
+	if (!g_blkpool)
+		return 0;
+
+	for (i = 0; i < g_thread_num; i++) {
+		for (j = 0; j < MAX_POOL_LENTH_COMP; j++) {
+			src_len = g_zip_pool.pool[i].bds[j].src_len;
+			g_zip_pool.pool[i].bds[j].pool_src =
+				wd_blkpool_alloc(g_blkpool, src_len);
+
+			dst_len = g_zip_pool.pool[i].bds[j].dst_len;
+			g_zip_pool.pool[i].bds[j].pool_dst =
+				wd_blkpool_alloc(g_blkpool, dst_len);
+
+			if (!g_zip_pool.pool[i].bds[j].pool_src ||
+			    !g_zip_pool.pool[i].bds[j].pool_dst)
+				return -EINVAL;
+
+			memcpy(g_zip_pool.pool[i].bds[j].pool_src,
+			       g_zip_pool.pool[0].bds[j].src, src_len);
+		}
+	}
+	return 0;
+}
+
 int zip_uadk_benchmark(struct acc_option *options)
 {
 	u32 ptime;
@@ -1372,6 +1452,10 @@ int zip_uadk_benchmark(struct acc_option *options)
 		return ret;
 
 	ret = load_file_data(options->algname, options->pktlen, options->optype);
+	if (ret)
+		return ret;
+
+	ret = load_blkpool_data();
 	if (ret)
 		return ret;
 

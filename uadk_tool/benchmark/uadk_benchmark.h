@@ -81,6 +81,7 @@ struct acc_option {
 	bool latency;
 	u32 sched_type;
 	int task_type;
+	bool user;
 };
 
 enum acc_type {

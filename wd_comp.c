@@ -39,6 +39,9 @@ struct wd_comp_sess {
 	__u32 checksum;
 	__u8 *ctx_buf;
 	void *sched_key;
+	void *blkpool;
+	__u8 *blkpool_ctxbuf;
+	enum wd_blkpool_flag blkpool_flag;
 };
 
 struct wd_comp_setting {
@@ -467,6 +470,34 @@ handle_t wd_comp_alloc_sess(struct wd_comp_sess_setup *setup)
 		goto sched_err;
 	}
 
+	if (setup->blkpool) {
+		sess->blkpool = setup->blkpool;
+		sess->blkpool_flag = WD_BLKPOOL_FLAT_USER;
+	} else {
+		struct wd_ctx_config_internal *config = &wd_comp_setting.config;
+		struct wd_ctx_internal *ctx = config->ctxs;
+		struct wd_blkpool_setup blksetup;
+
+		if (ctx->blkpool) {
+			sess->blkpool = ctx->blkpool;
+			sess->blkpool_flag = WD_BLKPOOL_FLAT_MEMCPY;
+
+			memset(&blksetup, 0, sizeof(setup));
+			blksetup.block_size = HW_CTX_SIZE;
+			blksetup.block_num = DEFAULT_BLOCK_NM;
+			blksetup.align_size = DEFAULT_ALIGN_SIZE;
+			ret = wd_blkpool_setup(sess->blkpool, &blksetup);
+			if (ret)
+				goto sched_err;
+		}
+	}
+
+	if (sess->blkpool) {
+		sess->blkpool_ctxbuf = wd_blkpool_alloc(sess->blkpool, HW_CTX_SIZE);
+		if (!sess->blkpool_ctxbuf)
+			goto sched_err;
+	}
+
 	return (handle_t)sess;
 
 sched_err:
@@ -485,6 +516,9 @@ void wd_comp_free_sess(handle_t h_sess)
 
 	if (sess->ctx_buf)
 		free(sess->ctx_buf);
+
+	if (sess->blkpool_ctxbuf)
+		wd_blkpool_free(sess->blkpool, sess->blkpool_ctxbuf);
 
 	if (sess->sched_key)
 		free(sess->sched_key);
@@ -505,6 +539,9 @@ int wd_comp_reset_sess(handle_t h_sess)
 
 	if (sess->ctx_buf)
 		memset(sess->ctx_buf, 0, HW_CTX_SIZE);
+
+	if (sess->blkpool_ctxbuf)
+		memset(sess->blkpool_ctxbuf, 0, HW_CTX_SIZE);
 
 	return 0;
 }
@@ -588,6 +625,14 @@ static int wd_comp_check_params(struct wd_comp_sess *sess,
 	return 0;
 }
 
+void *wd_comp_get_blkpool(void)
+{
+	struct wd_ctx_config_internal *config = &wd_comp_setting.config;
+	struct wd_ctx_internal *ctx = config->ctxs;
+
+	return ctx->blkpool;
+}
+
 static int wd_comp_sync_job(struct wd_comp_sess *sess,
 			    struct wd_comp_req *req,
 			    struct wd_comp_msg *msg)
@@ -609,6 +654,29 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	wd_dfx_msg_cnt(config, WD_CTX_CNT_NUM, idx);
 	ctx = config->ctxs + idx;
 
+	if (sess->blkpool) {
+		msg->ctx_buf = sess->blkpool_ctxbuf;
+		msg->blkpool = sess->blkpool;
+		msg->blkpool_flag = sess->blkpool_flag;
+
+		if (sess->blkpool_flag == WD_BLKPOOL_FLAT_MEMCPY) {
+			void *src = wd_blkpool_alloc(sess->blkpool, req->src_len);
+			void *dst = wd_blkpool_alloc(sess->blkpool, req->dst_len);
+
+			if (!src || !dst)
+				return -ENOMEM;
+
+			/* save */
+			msg->src = msg->req.src;
+			msg->dst = msg->req.dst;
+			/* replace */
+			msg->req.src = src;
+			msg->req.dst = dst;
+
+			memcpy(msg->req.src, msg->src, req->src_len);
+		}
+	}
+
 	msg_handle.send = wd_comp_setting.driver->send;
 	msg_handle.recv = wd_comp_setting.driver->recv;
 
@@ -616,6 +684,14 @@ static int wd_comp_sync_job(struct wd_comp_sess *sess,
 	ret = wd_handle_msg_sync(wd_comp_setting.driver, &msg_handle, ctx->ctx,
 				 msg, NULL, config->epoll_en);
 	pthread_spin_unlock(&ctx->lock);
+
+	if (sess->blkpool) {
+		if (sess->blkpool_flag == WD_BLKPOOL_FLAT_MEMCPY) {
+			memcpy(msg->dst, req->dst, req->dst_len);
+			wd_blkpool_free(sess->blkpool, msg->req.src);
+			wd_blkpool_free(sess->blkpool, msg->req.dst);
+		}
+	}
 
 	return ret;
 }
