@@ -12,6 +12,7 @@
 #include <string.h>
 #include <ctype.h>
 #include "wd_sched.h"
+#include "wd_bmm.h"
 #include "wd_util.h"
 
 #define WD_ASYNC_DEF_POLL_NUM		1
@@ -247,6 +248,37 @@ int wd_init_ctx_config(struct wd_ctx_config_internal *in,
 			WD_ERR("failed to init ctxs lock!\n");
 			goto err_out;
 		}
+		ctxs[i].blkpool = wd_blkpool_new(ctxs[i].ctx);
+		#if 0
+		//  can reserve memory here
+		// debug
+		/*
+		if (ctxs[i].blkpool) {
+			struct wd_blkpool_setup setup;
+			int ret;
+
+			memset(&setup, 0, sizeof(setup));
+			setup.block_size = DEFAULT_BLK_ALIGN;
+			setup.block_num = DEFAULT_BLOCK_NM;
+			setup.align_size = DEFAULT_ALIGN_SIZE;
+			ret = wd_blkpool_setup(ctxs[i].blkpool, &setup);
+			if (ret)
+				goto err_out;
+		}
+		//*/
+		if(!wd_is_sva(ctxs[i].ctx)) {
+			printf("nosva cfg->ctxs[i].ctx=%lx ctxs[i].ctx=%lx\n", cfg->ctxs[i].ctx, ctxs[i].ctx);
+			//ctxs[i].blkpool = wd_blkpool_new(ctxs[i].ctx, BLKPOOL_1G);
+			if (ctxs[i].blkpool) {
+				struct wd_blkpool_setup def_setup;
+
+				def_setup.mode = WD_BLKPOOL_MODE_SMM;
+				def_setup.flag = WD_BLKPOOL_FLAT_MEMCPY;
+				def_setup.align_size = 64;
+				wd_setup_blkpool(ctxs[i].blkpool, &def_setup);
+			}
+		}
+		#endif
 	}
 
 	in->ctxs = ctxs;
@@ -298,8 +330,13 @@ void wd_clear_ctx_config(struct wd_ctx_config_internal *in)
 {
 	__u32 i;
 
-	for (i = 0; i < in->ctx_num; i++)
+	for (i = 0; i < in->ctx_num; i++) {
+		if (in->ctxs[i].blkpool) {
+			wd_blkpool_destroy_sglpool(in->ctxs[i].blkpool, in->ctxs[i].h_sgl_pool);
+			wd_blkpool_delete(in->ctxs[i].blkpool);
+		}
 		pthread_spin_destroy(&in->ctxs[i].lock);
+	}
 
 	in->priv = NULL;
 	in->ctx_num = 0;
@@ -1883,10 +1920,12 @@ int wd_init_param_check(struct wd_ctx_config *config, struct wd_sched *sched)
 		return -WD_EINVAL;
 	}
 
+	/*
 	if (!wd_is_sva(config->ctxs[0].ctx)) {
 		WD_ERR("invalid: the mode is non sva, please check system!\n");
 		return -WD_EINVAL;
 	}
+	*/
 
 	return 0;
 }

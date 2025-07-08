@@ -604,6 +604,15 @@ struct wd_capability {
 struct wd_capability *wd_get_alg_cap(void);
 void wd_release_alg_cap(struct wd_capability *head);
 
+/**
+ * wd_is_noiommu() - Check if the system is noiommu.
+ * @h_ctx: The handle of context.
+ *
+ * Return 1 if noiommu, 0 for has iommu, less than 0 otherwise.
+ */
+int wd_is_noiommu(handle_t h_ctx);
+
+void *wd_reserve_mem(handle_t h_ctx, size_t size);
 #ifdef __cplusplus
 }
 #endif
